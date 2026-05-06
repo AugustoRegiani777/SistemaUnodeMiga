@@ -1,6 +1,7 @@
 import { DB_NAME, DB_VERSION, STORE_NAMES, initialCategories, initialProducts } from "../modules/seed.js";
 
 let dbPromise;
+let dbInstance;
 
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
@@ -59,11 +60,37 @@ export function openDatabase() {
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => createStores(request.result);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      dbInstance = request.result;
+      dbInstance.onversionchange = () => {
+        dbInstance?.close();
+        dbInstance = undefined;
+        dbPromise = undefined;
+      };
+      dbInstance.onclose = () => {
+        dbInstance = undefined;
+        dbPromise = undefined;
+      };
+      resolve(dbInstance);
+    };
+    request.onerror = () => {
+      dbPromise = undefined;
+      reject(request.error);
+    };
+    request.onblocked = () => {
+      console.warn("La base de datos quedo bloqueada por otra instancia abierta.");
+    };
   });
 
   return dbPromise;
+}
+
+export function resetDatabaseConnection() {
+  if (dbInstance) {
+    dbInstance.close();
+  }
+  dbInstance = undefined;
+  dbPromise = undefined;
 }
 
 export async function seedDatabase() {

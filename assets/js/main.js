@@ -1,4 +1,5 @@
 import { startApp } from "../../src/app/app.js";
+import { openDatabase, resetDatabaseConnection } from "../../src/db/idb.js";
 
 function isLocalDevHost() {
   const { hostname } = window.location;
@@ -35,8 +36,44 @@ async function registerServiceWorker() {
   }
 }
 
-registerServiceWorker();
-startApp().catch((error) => {
+async function requestPersistentStorage() {
+  if (!navigator.storage?.persist) return;
+  try {
+    await navigator.storage.persist();
+  } catch (error) {
+    console.warn("No se pudo solicitar almacenamiento persistente.", error);
+  }
+}
+
+function bindDatabaseLifecycle() {
+  const reconnect = async () => {
+    try {
+      resetDatabaseConnection();
+      await openDatabase();
+    } catch (error) {
+      console.warn("No se pudo reabrir la base local.", error);
+    }
+  };
+
+  window.addEventListener("pageshow", () => {
+    reconnect();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      reconnect();
+    }
+  });
+}
+
+async function boot() {
+  await requestPersistentStorage();
+  bindDatabaseLifecycle();
+  await registerServiceWorker();
+  await openDatabase();
+  await startApp();
+}
+
+boot().catch((error) => {
   console.error(error);
   const message = document.querySelector("#app-message");
   if (message) {
